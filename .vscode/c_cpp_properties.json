@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}\\include\\**",
+                // {Your MinGW include folder}\\**
+                "E:\\msys64\\mingw64\\include\\c++\\11.2.0\\**",
+                "E:\\msys64\\mingw64\\include\\**"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE"
+            ],
+            // {Your MinGW bin folder}\\g++.exe
+            "compilerPath": "E:\\msys64\\mingw64\\bin\\g++.exe",
+            "cStandard": "c11",
+            "cppStandard": "c++20",
+            "intelliSenseMode": "gcc-x64"
+        }
+    ],
+    "version": 4
+}
