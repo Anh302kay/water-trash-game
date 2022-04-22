@@ -1,39 +1,37 @@
 #include <iostream>
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
+#include <SDL/SDL.h>
+#include <SDL/SDL_image.h>
+#include <SDL/SDL_gfxPrimitives.h>
 #include "renderwindow.h"
 
-RenderWindow::RenderWindow(const char *p_title, int p_w, int p_h)
-    : window(NULL), renderer(NULL), windowWidth(p_w), windowHeight(p_h)
+RenderWindow::RenderWindow(Uint32 flags, int p_w, int p_h)
+    : screen(NULL), windowWidth(p_w), windowHeight(p_h), backgroundColour(NULL)
 {
-    window = SDL_CreateWindow(p_title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, p_w, p_h, SDL_WINDOW_SHOWN);
+    screen = SDL_SetVideoMode(p_w, p_h, 32, flags | SDL_HWSURFACE);
 
-    if (window == NULL)
+    if (screen == NULL)
     {
         std::cout << "failed to init window haha: " << SDL_GetError() << "\n";
     }
 
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    backgroundColour = SDL_MapRGB(screen->format, 0, 0, 0);
 
-    SDL_GetCurrentDisplayMode(0, &displayMode);
 }
 
 RenderWindow::~RenderWindow()
 {
-    SDL_DestroyWindow(window);
-    SDL_DestroyRenderer(renderer);
+    //cleanUp();
 }
 
-SDL_Texture *RenderWindow::loadTexture(const char *filePath)
+void RenderWindow::cleanUp()
 {
-    SDL_Texture * texture = NULL;
-    texture = IMG_LoadTexture(renderer, filePath);
-    if(texture == NULL)
+    if(screen != NULL)
     {
-        std::cout << "failed to load texture at " << filePath << SDL_GetError() << "\n";
+        SDL_FreeSurface(screen);
+        screen = NULL;
     }
-    return texture;
 }
+
 SDL_Surface* RenderWindow::loadSurface(const char *filePath)
 {
     SDL_Surface* surface = NULL;
@@ -42,31 +40,34 @@ SDL_Surface* RenderWindow::loadSurface(const char *filePath)
     {
         std::cout << "failed to load surface at " << filePath << SDL_GetError() << "\n";
     }
-    return surface;
+    SDL_Surface* new_surface = SDL_DisplayFormatAlpha(surface);
+    SDL_FreeSurface(surface);
+    return new_surface;
 }
 
 void RenderWindow::clear()
 {
-    SDL_RenderClear(renderer);
+    SDL_FillRect(screen, NULL, backgroundColour);
 }
 
-void RenderWindow::render(SDL_Texture *texture)
+void RenderWindow::render(SDL_Surface *texture)
 {
-    SDL_RenderCopy(renderer, texture, NULL, NULL);
+    SDL_BlitSurface(texture, NULL, screen, NULL);
 }
 
-void RenderWindow::render(SDL_Texture *texture, SDL_Rect textureRect)
+void RenderWindow::render(SDL_Surface *texture, SDL_Rect textureRect)
 {
-    SDL_RenderCopy(renderer, texture, NULL, &textureRect);
+    SDL_BlitSurface(texture, NULL, screen, &textureRect);
 }
 
-void RenderWindow::render(SDL_Texture *texture, float p_x, float p_y)
+void RenderWindow::render(SDL_Surface *texture, float p_x, float p_y)
 {
     SDL_Rect textureRect;
-    SDL_QueryTexture(texture, NULL, NULL, &textureRect.w,&textureRect.y);
+    textureRect.w = texture->w;
+    textureRect.h = texture->h;
     textureRect.x = p_x;
     textureRect.y = p_y;
-    SDL_RenderCopy(renderer, texture, NULL, &textureRect);
+    SDL_BlitSurface(texture, NULL, screen, &textureRect);
 }
 
 void RenderWindow::render(Entity &entity)
@@ -82,60 +83,50 @@ void RenderWindow::render(Entity &entity)
     dstRect.w = entity.getRect().w * entity.getScaleX();
     dstRect.h = entity.getRect().h * entity.getScaleY();
 
-    SDL_RenderCopy(renderer, entity.getTex(), &srcRect, &dstRect);
+    SDL_BlitSurface(entity.getTex(), &srcRect, screen, &dstRect);
 }
 
 void RenderWindow::renderCentered(TTF_Font *font, const char *text, SDL_Colour colour, float p_x, float p_y)
 {
-    SDL_Surface* message = TTF_RenderText_Blended(font, text, colour);
-    SDL_Texture* messageTex = SDL_CreateTextureFromSurface(renderer, message);
+    SDL_Surface *message = TTF_RenderText_Blended(font, text, colour);
     SDL_Rect messageRect;
-    SDL_QueryTexture(messageTex, NULL, NULL, &messageRect.w, &messageRect.h);
+    messageRect.w = message->w;
+    messageRect.h = message->h;
     messageRect.x = p_x - messageRect.w/2;
     messageRect.y = p_y - messageRect.h / 2;
 
-    SDL_RenderCopy(renderer, messageTex, NULL, &messageRect);
+    SDL_BlitSurface(message, NULL, screen, &messageRect);
 
-    SDL_DestroyTexture(messageTex);
     SDL_FreeSurface(message);
 }
 
-void RenderWindow::setDrawColour(SDL_Color backgroundColour)
+void RenderWindow::setDrawColour(SDL_Color colour)
 {
-    SDL_SetRenderDrawColor(renderer, backgroundColour.r, backgroundColour.g, backgroundColour.b, backgroundColour.a);
+    backgroundColour = SDL_MapRGB(screen->format, colour.r, colour.g, colour.b);
 }
 
 void RenderWindow::drawLine(int x1, int y1, int x2, int y2, SDL_Colour lineColour)
 {
-    SDL_SetRenderDrawColor(renderer, lineColour.r, lineColour.g, lineColour.b, lineColour.a);
-    SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
+    backgroundColour = SDL_MapRGB(screen->format, lineColour.r, lineColour.g, lineColour.b);
+    lineColor(screen, x1, y1, x2, y2, backgroundColour);
 }
 
 void RenderWindow::drawRect(SDL_Rect rect, SDL_Colour rectColour)
 {
-    SDL_SetRenderDrawColor(renderer, rectColour.r, rectColour.g, rectColour.b, rectColour.a);
-    SDL_RenderFillRect(renderer, &rect);
+    backgroundColour = SDL_MapRGB(screen->format, rectColour.r, rectColour.g, rectColour.b);
+    SDL_FillRect(screen, &rect, backgroundColour);
 }
 
 void RenderWindow::drawRect(int x, int y, int w, int h, SDL_Colour rectColour)
 {
     SDL_Rect rect = {(x),(y),(w),(h)};
-    SDL_SetRenderDrawColor(renderer, rectColour.r, rectColour.g, rectColour.b, rectColour.a);
-    SDL_RenderFillRect(renderer, &rect);
+    backgroundColour = SDL_MapRGB(screen->format, rectColour.r, rectColour.g, rectColour.b);
+    SDL_FillRect(screen, &rect, backgroundColour);
 }
 
 void RenderWindow::display()
 {
-    SDL_RenderPresent(renderer);
-}
-
-void RenderWindow::setTitle(const char *title)
-{
-    SDL_SetWindowTitle(window, title);
-}
-void RenderWindow::setIcon(SDL_Surface *icon)
-{
-    SDL_SetWindowIcon(window, icon);
+    SDL_Flip(screen);
 }
 
 int RenderWindow::getWindowWidth()

@@ -1,5 +1,5 @@
 #include <iostream>
-#include <SDL2/SDL.h>
+#include <SDL/SDL.h>
 
 #include "entity.h"
 
@@ -10,10 +10,11 @@ Entity::Entity()
     entityTex = NULL;
 }
 
-Entity::Entity(SDL_Texture *texture, float x, float y)
+Entity::Entity(SDL_Surface *texture, float x, float y)
     : entityTex(texture), entityX(x), entityY(y)
 {
-    SDL_QueryTexture(entityTex, NULL, NULL, &entityRect.w, &entityRect.h);
+    entityRect.w = entityTex->w;
+    entityRect.h = entityTex->h;
 }
 
 Entity::~Entity()
@@ -25,15 +26,16 @@ void Entity::free()
 {
     if(entityTex != NULL)
     {
-        SDL_DestroyTexture(entityTex);
+        SDL_FreeSurface(entityTex);
         entityTex = NULL;
     }
 }
 
-void Entity::setTex(SDL_Texture* tex)
+void Entity::setTex(SDL_Surface *tex)
 {
     entityTex = tex;
-    SDL_QueryTexture(entityTex, NULL, NULL, &entityRect.w, &entityRect.h);
+    entityRect.w = entityTex->w;
+    entityRect.h = entityTex->h;
 }
 
 void Entity::setXY(float x, float y)
@@ -55,5 +57,5 @@ void Entity::setGrabbed(bool grab)
 
 void Entity::setColourMod(Uint8 r, Uint8 g, Uint8 b)
 {
-    SDL_SetTextureColorMod(entityTex, r, g, b);
+    //SDL_SetColorKey(entityTex, SDL_TRUE, SDL_MapRGB(entityTex->format, r,g,b));
 }

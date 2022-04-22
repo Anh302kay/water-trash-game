@@ -1,18 +1,18 @@
 #pragma once
 
 #include <iostream>
-#include <SDL2/SDL.h>
+#include <SDL/SDL.h>
 
 
 class Entity
 {
 public:
     Entity();
-    Entity(SDL_Texture* texture, float x, float y);
+    Entity(SDL_Surface *texture, float x, float y);
     virtual ~Entity();
     void free();
-    SDL_Texture* getTex() { return entityTex;};
-    void setTex(SDL_Texture* tex);
+    SDL_Surface *getTex() { return entityTex; };
+    void setTex(SDL_Surface *tex);
     SDL_Rect getRect() { return entityRect; }
     void setXY(float x, float y);
     float getX() { return entityX;}
@@ -23,10 +23,10 @@ public:
     bool isGrabbed() { return grabbed; }
     void setGrabbed(bool grab);
     void setColourMod(Uint8 r, Uint8 g, Uint8 b);
-    void getColourMod(Uint8 *r, Uint8 *g, Uint8 *b) { SDL_GetTextureColorMod(entityTex, r, g, b); }
+    void getColourMod(Uint8 *r, Uint8 *g, Uint8 *b) { /*SDL_GetSurfaceColorMod(entityTex, r, g, b); */}
 
 protected:
-    SDL_Texture *entityTex;
+    SDL_Surface *entityTex;
     SDL_Rect entityRect = {0,0,0,0};;
     float entityX, entityY;
     float scaleX = 1.0f, scaleY = 1.0f;

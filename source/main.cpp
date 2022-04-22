@@ -1,22 +1,24 @@
-#ifdef __EMSCRIPTEN__
-#include <emscripten.h>
-#include <emscripten/html5.h>
-#endif
 #include <iostream>
+#include <math.h>
 #include <vector>
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
-#include <SDL2/SDL_ttf.h>
-#include <SDL2/SDL_mixer.h>
+#include <SDL/SDL.h>
+#include <SDL/SDL_image.h>
+#include <SDL/SDL_ttf.h>
+#include <SDL/SDL_mixer.h>
+#include <3ds.h>
 
 #include "renderwindow.h"
 #include "entity.h"
 
-#define screenWidth 800
-#define screenHeight 600
+#define topScreenW 400
+#define topScreenH 240
+
+#define bottomScreenW 320
+#define bottomScreenH 240
 
 bool SDLinit()
 {
+    romfsInit();
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) > 0)
         std::cout << "could not init sdl 2" << SDL_GetError() << "\n";
     if (!(IMG_Init(IMG_INIT_PNG)))
@@ -30,12 +32,11 @@ bool SDLinit()
 }
 
 bool init = SDLinit();
-unsigned int trashVisibility;
+unsigned int trashVisibility = 0;
 int timer = 0;
-Uint64 currentTick = SDL_GetPerformanceCounter();
-Uint64 lastTick = 0;
-double deltaTime = 0;
-RenderWindow window("Garbage Gatherer", screenWidth, screenHeight);
+RenderWindow screen(SDL_DUALSCR, 400, 480);
+char timerChar[32];
+char trashCollected[32];
 
 SDL_Colour MapToColour(Uint8 r, Uint8 g, Uint8 b, Uint8 a)
 {
@@ -43,7 +44,7 @@ SDL_Colour MapToColour(Uint8 r, Uint8 g, Uint8 b, Uint8 a)
     return colour;
 }
 
-SDL_Rect MapToRect(int x, int y, int w, int h)
+SDL_Rect MapToRect(Sint16 x, Sint16 y, Uint16 w, Uint16 h)
 {
     SDL_Rect rect = {(x), (y), (w), (h)};
     return rect;
@@ -51,21 +52,24 @@ SDL_Rect MapToRect(int x, int y, int w, int h)
 
 void randomizeTrash(Entity& trash)
 {
-    trash.setXY(rand() % (screenWidth/2 - 60 + trash.getRect().w/2)*2, rand() % (screenHeight - 230) + 120);
+    trash.setXY((rand() % 300 + 60 - trash.getRect().w), (rand() % 100) + 380 - trash.getRect().h);
 }
 
 bool trashCollision(Entity& trash, Entity& hook)
 {
-    SDL_Rect trashRect = {((int)trash.getX()), ((int)trash.getY()), (trash.getRect().w ), (trash.getRect().h)};
-    SDL_Rect hookRect = {((int)hook.getX()), ((int)hook.getY()), (hook.getRect().w ), (hook.getRect().h )};
+    SDL_Rect trashRect = {((Sint16)trash.getX()), ((Sint16)trash.getY()), (trash.getRect().w), (trash.getRect().h)};
+    SDL_Rect hookRect = {((Sint16)hook.getX()), ((Sint16)hook.getY()), (hook.getRect().w), (hook.getRect().h)};
     trashRect.h *= trash.getScaleY();
     trashRect.w *= trash.getScaleX();
     hookRect.h *= hook.getScaleY();
     hookRect.w *= hook.getScaleX();
 
+    return (trash.getX() + trashRect.w > hook.getX()) && (trash.getX() < hook.getX() + hookRect.w) && (trash.getY() + trashRect.h > hook.getY()) && (trash.getY() < hook.getY() + hookRect.h);
+}
 
-    return (SDL_HasIntersection(&trashRect, &hookRect));
-
+bool rectCollision(SDL_Rect rect1, SDL_Rect rect2)
+{
+    return (rect1.x + rect1.w > rect2.x) && (rect1.x < rect2.x + rect2.x) && (rect1.y + rect1.h > rect2.y) && (rect1.y < rect2.y + rect2.h);
 }
 
 void reset(std::vector<Entity>& tt)
@@ -75,19 +79,19 @@ void reset(std::vector<Entity>& tt)
         switch (std::rand() % 5 + 1)
         {
         case 1:
-            t.setTex(window.loadTexture("res/gfx/can2.png"));
+            t.setTex(screen.loadSurface("romfs:gfx/can2.png"));
             break;
         case 2:
-            t.setTex(window.loadTexture("res/gfx/bottle.png"));
+            t.setTex(screen.loadSurface("romfs:gfx/bottle.png"));
             break;
         case 3:
-            t.setTex(window.loadTexture("res/gfx/phone.png"));
+            t.setTex(screen.loadSurface("romfs:gfx/phone.png"));
             break;
         case 4:
-            t.setTex(window.loadTexture("res/gfx/trash.png"));
+            t.setTex(screen.loadSurface("romfs:gfx/trash.png"));
             break;
         case 5:
-            t.setTex(window.loadTexture("res/gfx/bag2.png"));
+            t.setTex(screen.loadSurface("romfs:gfx/bag2.png"));
             break;
         }
         randomizeTrash(t);
@@ -106,213 +110,215 @@ void increaseTrash(std::vector<Entity>& tt, unsigned int increase)
 int main(int argc, char* argv[])
 {
     srand((unsigned)time(NULL));
-    SDL_Surface* icon = window.loadSurface("res/gfx/hook.png");
-    window.setIcon(icon);
-    SDL_FreeSurface(icon);
+    SDL_ShowCursor(SDL_FALSE);
 
-    TTF_Font* font30 = TTF_OpenFont("res/font/font.ttf", 30);
-    TTF_Font* font50 = TTF_OpenFont("res/font/font.ttf", 50);
-    TTF_Font* font70 = TTF_OpenFont("res/font/font.ttf", 70);
+    TTF_Font* font30 = TTF_OpenFont("romfs:font/font.ttf", 15);
+    TTF_Font* font50 = TTF_OpenFont("romfs:font/font.ttf", 25);
+    TTF_Font* font60 = TTF_OpenFont("romfs:font/font.ttf", 30);
+    TTF_Font* font70 = TTF_OpenFont("romfs:font/font.ttf", 35);
 
-    Mix_Chunk* trashPickUp = Mix_LoadWAV("res/sound/switch26.ogg");
-    Mix_Chunk* trashRelease = Mix_LoadWAV("res/sound/switch14.ogg");
-    Mix_Chunk* click = Mix_LoadWAV("res/sound/click4.ogg");
-    Mix_Chunk *jingle = Mix_LoadWAV("res/sound/jingles_STEEL15.ogg");
+    Mix_Chunk *trashPickUp = Mix_LoadWAV("romfs:sound/switch26.ogg");
+    Mix_Chunk *trashRelease = Mix_LoadWAV("romfs:sound/switch14.ogg");
+    Mix_Chunk *click = Mix_LoadWAV("romfs:sound/click4.ogg");
+    Mix_Chunk *jingle = Mix_LoadWAV("romfs:sound/jingles_STEEL15.ogg");
 
-    Entity hook(window.loadTexture("res/gfx/hook.png"), 100 , 100);
+    Entity hook(screen.loadSurface("romfs:gfx/hook.png"), 100, 100);
     hook.setScale(0.5, 0.5);
 
-    Entity retry(window.loadTexture("res/gfx/retry.png"), screenWidth/2, 500);
-    retry.setXY(screenWidth/2 - retry.getRect().w/2, 350);
-    Entity ocean(window.loadTexture("res/gfx/ocean.png"), 0,0);
+    Entity retry(screen.loadSurface("romfs:gfx/retry.png"), topScreenW / 2, 500);
+    retry.setXY(topScreenW / 2 - retry.getRect().w / 2, 350);
+    Entity ocean(screen.loadSurface("romfs:gfx/ocean.png"), 40, 0);
     std::vector<Entity> trash(20);
     
     for (Entity &t : trash)
     {
         switch (std::rand() % 5 + 1)
         {
-            case 1:
-                t.setTex(window.loadTexture("res/gfx/can2.png"));
-                break;
-            case 2:
-                t.setTex(window.loadTexture("res/gfx/bottle.png"));
-                break;
-            case 3:
-                t.setTex(window.loadTexture("res/gfx/phone.png"));
-                break;
-            case 4:
-                t.setTex(window.loadTexture("res/gfx/trash.png"));
-                break;
-            case 5:
-                t.setTex(window.loadTexture("res/gfx/bag2.png"));
-                break;
+        case 1:
+            t.setTex(screen.loadSurface("romfs:gfx/can2.png"));
+            break;
+        case 2:
+            t.setTex(screen.loadSurface("romfs:gfx/bottle.png"));
+            break;
+        case 3:
+            t.setTex(screen.loadSurface("romfs:gfx/phone.png"));
+            break;
+        case 4:
+            t.setTex(screen.loadSurface("romfs:gfx/trash.png"));
+            break;
+        case 5:
+            t.setTex(screen.loadSurface("romfs:gfx/bag2.png"));
+            break;
         }
         randomizeTrash(t);
     }
 
-    SDL_Event e;
-    bool gameRunning = true;
     bool isMenu = true;
-    while(gameRunning)
+    while(aptMainLoop())
     {
+        touchPosition touch;
+        hidScanInput();
+        hidTouchRead(&touch);
+        u32 kDown = hidKeysDown();
         if(isMenu)
         {
             //menu screen
-            SDL_PumpEvents();
-            int mouseX, mouseY;
-            SDL_GetMouseState(&mouseX, &mouseY);
-            while (SDL_PollEvent(&e))
+            if(kDown & KEY_TOUCH)
             {
-                if (e.type == SDL_QUIT)
-                    gameRunning = false;
-                if (e.type == SDL_MOUSEBUTTONDOWN)
-                    isMenu = false;
+                isMenu = false;
             }
-            ocean.setXY(ocean.getX(), sin(SDL_GetTicks() / 100) * 5 -70);
+            if(kDown & KEY_START)
+             break;
 
-            //draws everything
-            window.setDrawColour(MapToColour(99, 155, 255, 0));
-            window.clear();
-
-            window.render(ocean);
-            window.renderCentered(font70, "Garbage Gatherer", MapToColour(0,0,0,0), screenWidth/2, 120);
-            window.renderCentered(font30, "Click to play", MapToColour(0,0,0,0), screenWidth/2, 420);
+            ocean.setXY(ocean.getX(), (sin(SDL_GetTicks() / 100) * 5 -70) + 240 + 80);
             
-            window.display();
+            //draws everything
+            screen.setDrawColour(MapToColour(99, 155, 255, 0));
+            screen.clear();
+            screen.render(ocean);
+            screen.renderCentered(font70, "Garbage Gatherer", MapToColour(0, 0, 0, 0), topScreenW / 2, 50);
+            screen.renderCentered(font30, "Tap to play", MapToColour(0, 0, 0, 0), topScreenW / 2, 150);
+
+            screen.display();
+            SDL_Delay(4);
         }
         else
         {
-            const Uint8 *keyboard_state_array = SDL_GetKeyboardState(NULL);
-            //calculates deltatime
-            lastTick = currentTick;
-            currentTick = SDL_GetPerformanceCounter();
-            deltaTime = (double)((currentTick - lastTick) * 1000 / (double)SDL_GetPerformanceFrequency());
             //increases timer if trash is not invisible
             if(trashVisibility != trash.size())
             timer += 1;
 
-            //gets inputs
-            SDL_PumpEvents();
             int mouseX, mouseY;
-            SDL_GetMouseState(&mouseX, &mouseY);
-            while(SDL_PollEvent(&e))
+            if(touch.px != 0)
             {
-                if(e.type == SDL_QUIT)
-                gameRunning = false;
-                if(e.type == SDL_MOUSEBUTTONDOWN)
+                mouseX = touch.px + 40;
+                mouseY = touch.py + 240;
+            }
+            
+            
+            if(kDown & KEY_TOUCH)
+            {
+                for (Entity &t : trash)
                 {
-                    for (Entity &t : trash)
+                    if(!t.isGrabbed() && !hook.isGrabbed())
                     {
-                        if(!t.isGrabbed() && !hook.isGrabbed())
+                        if (t.getY() > 300)
                         {
-                            
-                            if (t.getY() > 100)
+                            // trash pickup
+                            if (trashCollision(t, hook))
                             {
-                                // trash pickup
-                                if (trashCollision(t, hook))
-                                {
-                                    Mix_PlayChannel(-1, trashPickUp, 0);
-                                    t.setGrabbed(true);
-                                    hook.setGrabbed(true);
-                                }
+                                Mix_PlayChannel(-1, trashPickUp, 0);
+                                t.setGrabbed(true);
+                                hook.setGrabbed(true);
                             }
                         }
-                        else if(t.isGrabbed() && hook.isGrabbed())
-                        {
-                            //makes trash invisibles
-                            if(t.getY() < 100)
-                            {
-                                Mix_PlayChannel(-1, trashRelease, 0);
-                                t.setGrabbed(false);
-                                hook.setGrabbed(false);
-                                t.setScale(0, 0);
-                                trashVisibility++;
-                                if(trashVisibility == trash.size())
-                                    Mix_PlayChannel(-1, jingle, 0);
-                            }
-                        }
-      
                     }
-                    //checks if all trash is invisible
-                    if (trashVisibility == trash.size())
+                    else if(t.isGrabbed() && hook.isGrabbed())
                     {
-                        SDL_Rect retryRect = {(int)retry.getX(), (int)retry.getY(), retry.getRect().w, retry.getRect().h};
-                        SDL_Rect mosueRect = MapToRect(mouseX, mouseY, 2, 2);
-                        if (SDL_HasIntersection(&retryRect, &mosueRect))
+                        //makes trash invisibles
+                        if(t.getY() < 300)
                         {
-                            Mix_PlayChannel(-1, click, 0);
-                            increaseTrash(trash, 10);
-                            reset(trash);
+                            Mix_PlayChannel(-1, trashRelease, 0);
+                            t.setGrabbed(false);
+                            hook.setGrabbed(false);
+                            t.setScale(0, 0);
+                            trashVisibility++;
+                            if(trashVisibility == trash.size())
+                                Mix_PlayChannel(-1, jingle, 0);
                         }
                     }
                 }
-                if(e.type == SDL_KEYDOWN)
+                //checks if all trash is invisible
+                if (trashVisibility == trash.size())
                 {
-                    if(keyboard_state_array[SDL_SCANCODE_ESCAPE])
-                    gameRunning = false;
+                    SDL_Rect retryRect = {(Sint16)retry.getX(), (Sint16)retry.getY(), retry.getRect().w, retry.getRect().h};
+                    SDL_Rect mosueRect = MapToRect(mouseX, mouseY, 2, 2);
+                    if (rectCollision(retryRect, mosueRect))
+                    {
+                        Mix_PlayChannel(-1, click, 0);
+                        increaseTrash(trash, 10);
+                        reset(trash);
+                    }
                 }
             }
-      
-            hook.setXY(mouseX - (hook.getRect().w * hook.getScaleX()) / 2, mouseY - (hook.getRect().h * hook.getScaleY())/2 + (40 * hook.getScaleY()));
-            ocean.setXY(ocean.getX(), sin(SDL_GetTicks()/100)*5 + 10);
+  
+            if (kDown & KEY_START)
+                break;
+
+            hook.setXY(mouseX - hook.getRect().w / 2, mouseY - hook.getRect().h/2 + 10);
+            ocean.setXY(ocean.getX(), (sin(SDL_GetTicks() / 100) * 5 - 70) + 240 + 85);
+
             //clears screen and draws everything
-            window.setDrawColour(MapToColour(99, 155, 255, 0));
-            window.clear();
-
-
+            screen.setDrawColour(MapToColour(99, 155, 255, 0));
+            screen.clear();
 
             for (Entity &t : trash)
             {   
+                if(t.getScaleX() != 0)
                 if(!t.isGrabbed())
                 {
-                    window.render(t);
+                    screen.render(t);
                 }
             }
 
-            window.render(hook);
+            screen.render(hook);
             for (Entity &t : trash)
             {
                 if (t.isGrabbed())
                 {
                     t.setXY(hook.getX(), hook.getY() + 20);
-                    window.render(t);
+                    screen.render(t);
                 }
             }
-            
-            window.drawRect(mouseX-2, mouseY-4,5, -600, MapToColour(0, 0, 0, 0));
-            window.renderCentered(font50, std::to_string(timer /window.getDisplayMode().refresh_rate).c_str(), MapToColour(0, 0, 0, 0), screenWidth/2, 50);
 
-            window.render(ocean);
+            screen.drawRect(mouseX - 1, mouseY - (mouseY - 240), 3, mouseY - 240, MapToColour(0, 0, 0, 0));
+            sprintf(timerChar, "%d", (timer / 60));
+            screen.renderCentered(font60, "Time", MapToColour(0, 0, 0, 0), 100, 30);
+            screen.renderCentered(font50, timerChar, MapToColour(0, 0, 0, 0), 100, 60);
+            sprintf(trashCollected, "%d", trashVisibility);
+            screen.renderCentered(font60, "Trash Collected", MapToColour(0, 0, 0, 0), 300, 30);
+            screen.renderCentered(font50, trashCollected, MapToColour(0,0,0,0), 300, 60);
+
+            screen.render(ocean);
             if (trashVisibility == trash.size())
             {
-                SDL_Rect retryRect = {(int)retry.getX(), (int)retry.getY(), retry.getRect().w, retry.getRect().h};
-                SDL_Rect mosueRect = MapToRect(mouseX, mouseY, 2, 2);
-                if (SDL_HasIntersection(&retryRect, &mosueRect))
-                {
-                    retry.setColourMod(127,127,127);
-                }
-                else
-                {
-                    retry.setColourMod(255, 255, 255);
-                }
-                window.render(retry);
+                screen.render(retry);  
             }
-            window.display();
+            screen.display();
+            SDL_Delay(4);
+            
         }
         
        
 
     }
+    for (Entity &t : trash)
+    {
+        t.free();
+    }
+    hook.free();
+    ocean.free();
+    retry.free();
+
+    //screen.cleanUp();
+
     Mix_FreeChunk(jingle);
     Mix_FreeChunk(click);
     Mix_FreeChunk(trashRelease);
     Mix_FreeChunk(trashPickUp);
+
     TTF_CloseFont(font30);
     TTF_CloseFont(font50);
+    TTF_CloseFont(font60);
     TTF_CloseFont(font70);
+
+    SDL_ShowCursor(SDL_ENABLE);
+
     Mix_Quit();
     TTF_Quit();
     IMG_Quit();
     SDL_Quit();
+    romfsExit();
+    
     return 0;
 }
